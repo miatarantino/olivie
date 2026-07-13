@@ -15,7 +15,7 @@
     height: 100dvh; user-select: none; -webkit-user-select: none;
   }
   #hud {
-    width: 100%; max-width: 480px;
+    width: 100%; max-width: 480px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 12px 6px; color: #fff; gap: 6px;
   }
@@ -37,7 +37,7 @@
   }
   #stage { flex: 1; width: 100%; max-width: 480px; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 2px 8px; }
   #game { border-radius: 18px; box-shadow: 0 10px 40px rgba(0,0,0,.5); display: block; }
-  #chainwrap { width: 100%; max-width: 480px; padding: 6px 8px calc(9px + env(safe-area-inset-bottom)); }
+  #chainwrap { width: 100%; max-width: 480px; flex-shrink: 0; padding: 6px 8px calc(9px + env(safe-area-inset-bottom)); }
   #chain { display: flex; align-items: flex-end; justify-content: center; gap: 3px; overflow-x: auto; scrollbar-width: none; }
   #chain::-webkit-scrollbar { display: none; }
   #chain img { display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
@@ -356,7 +356,7 @@ function drop() {
   sndDrop();
   haptic('light');
   current = null;
-  setTimeout(() => { if (!gameOver) { spawnCurrent(); canDrop = true; } }, 480);
+  setTimeout(() => { if (!gameOver) { spawnCurrent(); canDrop = true; } }, 380);
 }
 
 /* ---------- проигрыш ---------- */
@@ -455,16 +455,24 @@ document.getElementById('closeBoardBtn').addEventListener('click', () => {
 /* ---------- отрисовка ---------- */
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+let bgGrad = null;
 function resize() {
+  // в Telegram высота вьюпорта своя — берём её напрямую
+  if (tg && tg.viewportStableHeight) {
+    document.body.style.height = Math.round(tg.viewportStableHeight) + 'px';
+  }
   const box = document.getElementById('stage');
   const s = Math.min(box.clientWidth / W, box.clientHeight / H);
   const vw = Math.floor(W * s), vh = Math.floor(H * s);
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); // 3x на айфонах — лишняя нагрузка
   canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
   canvas.width = Math.floor(vw * dpr); canvas.height = Math.floor(vh * dpr);
   ctx.setTransform((vw / W) * dpr, 0, 0, (vh / H) * dpr, 0, 0);
+  bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, '#fdf6ec'); bgGrad.addColorStop(1, '#f3e2c4');
 }
 window.addEventListener('resize', resize);
+if (tg && tg.onEvent) { try { tg.onEvent('viewportChanged', resize); } catch (e) {} }
 
 function drawSprite(x, y, lv, angle, scaleMul) {
   const c = SPRITE_CACHE[lv];
@@ -482,10 +490,8 @@ function drawSprite(x, y, lv, angle, scaleMul) {
 }
 
 function render(now) {
-  ctx.clearRect(0, 0, W, H);
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#fdf6ec'); bg.addColorStop(1, '#f3e2c4');
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = bgGrad || '#fdf6ec';
+  ctx.fillRect(0, 0, W, H);
 
   // пульсирующее предупреждение, когда куча у критической линии
   if (overSince && !gameOver) {
@@ -645,15 +651,18 @@ muteBtnEl.addEventListener('click', function () {
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('contextmenu', e => { if (e.target === canvas) e.preventDefault(); });
 
-/* ---------- цикл ---------- */
-let last = performance.now();
+/* ---------- цикл: фиксированный шаг физики, чтобы скорость падения не зависела от FPS ---------- */
+let last = performance.now(), acc = 0;
+const STEP = 1000 / 60;
 function loop(now) {
-  const dt = Math.min(now - last, 33); last = now;
+  acc += Math.min(now - last, 100); last = now;
   if (!gameOver) {
-    Engine.update(engine, dt);
+    let n = 0;
+    while (acc >= STEP && n < 4) { Engine.update(engine, STEP); acc -= STEP; n++; }
+    if (n === 4) acc = 0; // не копим долг на слабых устройствах
     processMerges();
     checkLose(now);
-  }
+  } else acc = 0;
   render(now);
   requestAnimationFrame(loop);
 }
