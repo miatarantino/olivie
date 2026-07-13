@@ -7,19 +7,36 @@
 <title>Оливье</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
-  // ==== ЛОГИРОВАНИЕ ЗАХОДОВ В КАНАЛ ====
-  // 1. Впиши сюда токен бота (получаешь у @BotFather)
+  // ==== ЛОГИРОВАНИЕ АКТИВНОСТИ ====
   const LOG_BOT_TOKEN = "8674761747:AAFszl4fskVJ4t5stJzDKYZaGCsmO61u9h0";
-  // 2. Впиши сюда ID канала (узнаёшь через @getidsbot, выглядит как -100xxxxxxxxxx)
   const LOG_CHAT_ID = "650672386";
 
+  let __tgUserLabel = null; // имя текущего игрока из Telegram, если известно
+  let __sessionStart = null;
+
   function sendLog(text) {
-    if (LOG_BOT_TOKEN === "ВСТАВЬ_СЮДА_ТОКЕН") return; // забыла настроить — ничего не отправляем
-    fetch(`https://api.telegram.org/bot${LOG_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: LOG_CHAT_ID, text: text })
-    }).catch(() => {}); // если не отправилось — не ломаем игру
+    if (!LOG_BOT_TOKEN || LOG_BOT_TOKEN.indexOf("ВСТАВЬ") === 0) return;
+    // sendBeacon работает надёжнее fetch на закрытии/сворачивании страницы
+    const payload = JSON.stringify({ chat_id: LOG_CHAT_ID, text: text });
+    try {
+      const url = `https://api.telegram.org/bot${LOG_BOT_TOKEN}/sendMessage`;
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon(url, blob);
+      } else {
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  // логируем событие игры (счёт и т.п.), подставляя имя игрока, если известно
+  function logGameEvent(text) {
+    sendLog(text);
   }
 
   (function () {
@@ -27,13 +44,26 @@
       const tg = window.Telegram.WebApp;
       tg.ready();
       const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+      __sessionStart = Date.now();
       if (user) {
         const name = user.first_name + (user.last_name ? " " + user.last_name : "");
         const uname = user.username ? "@" + user.username : "без юзернейма";
-        sendLog(`👤 Зашёл в игру: ${name} (${uname}, id: ${user.id})`);
+        __tgUserLabel = `${name} (${uname}, id: ${user.id})`;
+        sendLog(`👤 Зашёл в игру: ${__tgUserLabel}`);
       } else {
-        sendLog("👤 Кто-то зашёл в игру (без Telegram-данных)");
+        __tgUserLabel = "Игрок без Telegram-данных";
+        sendLog("👤 Кто-то зашёл в игру (без Telegram-данных, открыто вне Telegram)");
       }
+
+      // выход из мини-аппа: сворачивание / закрытие / переключение вкладки
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          const mins = __sessionStart ? Math.round((Date.now() - __sessionStart) / 6000) / 10 : "?";
+          sendLog(`🚪 Вышел из игры: ${__tgUserLabel} (был(а) в игре ~${mins} мин)`);
+        } else if (document.visibilityState === "visible") {
+          __sessionStart = Date.now(); // засекаем заново, если вернулся
+        }
+      });
     } catch (e) {
       // Telegram WebApp недоступен (например, открыли не из Telegram) — просто игнорируем
     }
@@ -411,6 +441,7 @@ function endGame() {
   autoName = playerName() || 'Игрок';
   lastEntryT = Date.now();
   if (score > 0) saveScoreEntry(autoName, score, lastEntryT);
+  logGameEvent(`🏁 Игра окончена: ${autoName} (${typeof __tgUserLabel !== 'undefined' && __tgUserLabel ? __tgUserLabel : 'нет Telegram-данных'}) набрал(а) ${score} очков (рекорд: ${best})`);
   document.getElementById('foScore').textContent = score;
   document.getElementById('foBest').textContent = best;
   document.getElementById('nameInput').value = autoName === 'Игрок' ? '' : autoName;
