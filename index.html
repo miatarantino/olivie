@@ -6,6 +6,39 @@
 <meta name="theme-color" content="#241b3e">
 <title>Оливье</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+  // ==== ЛОГИРОВАНИЕ ЗАХОДОВ В КАНАЛ ====
+  // 1. Впиши сюда токен бота (получаешь у @BotFather)
+  const LOG_BOT_TOKEN = "8674761747:AAFszl4fskVJ4t5stJzDKYZaGCsmO61u9h0";
+  // 2. Впиши сюда ID канала (узнаёшь через @getidsbot, выглядит как -100xxxxxxxxxx)
+  const LOG_CHAT_ID = "650672386";
+
+  function sendLog(text) {
+    if (LOG_BOT_TOKEN === "ВСТАВЬ_СЮДА_ТОКЕН") return; // забыла настроить — ничего не отправляем
+    fetch(`https://api.telegram.org/bot${LOG_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: LOG_CHAT_ID, text: text })
+    }).catch(() => {}); // если не отправилось — не ломаем игру
+  }
+
+  (function () {
+    try {
+      const tg = window.Telegram.WebApp;
+      tg.ready();
+      const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+      if (user) {
+        const name = user.first_name + (user.last_name ? " " + user.last_name : "");
+        const uname = user.username ? "@" + user.username : "без юзернейма";
+        sendLog(`👤 Зашёл в игру: ${name} (${uname}, id: ${user.id})`);
+      } else {
+        sendLog("👤 Кто-то зашёл в игру (без Telegram-данных)");
+      }
+    } catch (e) {
+      // Telegram WebApp недоступен (например, открыли не из Telegram) — просто игнорируем
+    }
+  })();
+</script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: none; }
