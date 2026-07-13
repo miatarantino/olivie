@@ -56,14 +56,23 @@
       }
 
       // выход из мини-аппа: сворачивание / закрытие / переключение вкладки
+      let __exitLogged = false;
+      function reportExit(reason) {
+        if (__exitLogged) return;
+        __exitLogged = true;
+        const mins = __sessionStart ? Math.round((Date.now() - __sessionStart) / 6000) / 10 : "?";
+        sendLog(`🚪 Вышел из игры: ${__tgUserLabel} (был(а) в игре ~${mins} мин)`);
+      }
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
-          const mins = __sessionStart ? Math.round((Date.now() - __sessionStart) / 6000) / 10 : "?";
-          sendLog(`🚪 Вышел из игры: ${__tgUserLabel} (был(а) в игре ~${mins} мин)`);
+          reportExit("visibilitychange");
         } else if (document.visibilityState === "visible") {
+          __exitLogged = false;
           __sessionStart = Date.now(); // засекаем заново, если вернулся
         }
       });
+      window.addEventListener("pagehide", () => reportExit("pagehide"));
+      window.addEventListener("beforeunload", () => reportExit("beforeunload"));
     } catch (e) {
       // Telegram WebApp недоступен (например, открыли не из Telegram) — просто игнорируем
     }
